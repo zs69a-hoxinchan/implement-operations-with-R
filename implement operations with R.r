@@ -68,10 +68,7 @@ z_values<-sapply(vertex_list,function(vertex)
 OPT<-max(z_values)
 opt_index<-which.max(z_values)
 opt_vertex<-vertex_list[[opt_index]]
-print("最优解为：")
-print(opt_vertex)
-print("最优目标函数值为：")
-print(OPT)
+cat("最优解为：",opt_vertex,"\n","最优目标函数值为：",OPT,"\n")
 #将最优解对应的图像绘制到图像上
 slope<--2/3
 intercept<-OPT/3
@@ -88,3 +85,109 @@ points(opt_vertex[1],opt_vertex[2],col="#FFE212",pch = 19,cex = 1.5)
 #        col="#66ccff",border = "black")
 #abline(a=intercept,b=slope,col="#FFE212",lwd = 2)
 #points(opt_vertex[1],opt_vertex[2],col="#FFE212",pch = 19,cex = 1.5)
+
+##单纯形法
+#单纯形法对线性代数进行求解，需要进行标准化，构造初始单纯形表后迭代更新
+#以以下题目为例，我们用单纯形法对其进行最优解的求解
+# max z = 50x1 + 100x2
+# x1 + x2 + s1 = 300
+# 2x1 + x2 + s2 = 400
+# x2 + s3 = 250
+# x1,x2,s1,s2,s3 >= 0 
+
+rm(list = ls()) #清空工作区
+#定义目标函数系数
+z<-c(x1=50,x2=100,s1=0,s2=0,s3=0)
+#构造系数矩阵
+coef_matrix<-matrix(c(1, 1, 1, 0, 0,
+                      2, 1, 0, 1, 0,
+                      0, 1, 0, 0, 1), 
+                   nrow = 3, byrow = TRUE)
+colnames(coef_matrix)<-c("x1","x2","s1","s2","s3");coef_matrix
+#初始化基变量与系数（因为我们已经做完标准化处理，因此必然存在着以松弛变量系数构建而成的单位矩阵作为可行基）
+basis<-coef_matrix[,c("s1","s2","s3")];basis #基变量
+not_b<-coef_matrix[,c("x1","x2")];not_b #非基变量
+initial_z<-rep(0,ncol(coef_matrix));initial_z #初始化系数
+#构造单纯形表格（增广矩阵）
+cor_coef<-c(z[3:5]);cor_coef #构造由基变量对应的目标函数系数的向量
+constant<-c(300,400,250)
+interaction_count<-0 #初始化迭代次数
+while(TRUE){
+    print(paste("第",interaction_count,"次迭代"))
+    interaction_count<-interaction_count+1
+    #计算中间量和检验数并判断是否达到最优解
+    zj<-c() 
+    interme<-c() #初始化循环中间量
+    for( i in seq_len(ncol(coef_matrix))){
+        zj<-c(cor_coef%*%coef_matrix[,i]) #将cor_coef与系数矩阵的每一列进行矩阵乘法
+        interme<-c(interme,zj) #将结果存储进zij向量
+    };interme
+    reduced_costs<-c(z-interme);reduced_costs #获得检验数对应的向量
+    if(max(reduced_costs)<=0){
+        print("达到最优解")
+        #输出最优解和目标函数最大值
+        opt_vertex<-rep(0,length(z))
+        names(opt_vertex)<-names(z)
+        for (i in seq_len(ncol(basis))){
+            opt_vertex[colnames(basis)[i]] <- constant[i]
+        }
+        # 计算目标函数的最大值
+        OPT<-sum(opt_vertex*z)
+        # 输出最优解和目标函数的最大值
+        for(var in names(opt_vertex)){
+            print(paste(var,"的最优解是",opt_vertex[var]))
+        }
+        print(paste("目标函数的最大值为：",OPT))
+        break
+    } else {
+        print("未达到最优解，进行迭代")
+    }
+    #单纯形法迭代部分
+    enter_col<-which.max(reduced_costs) 
+    enter<-coef_matrix[,enter_col,drop = FALSE] #选择入基变量
+    valid_indices<-which(enter>0) #避免除数为0的情况
+    if(length(valid_indices)==0){
+        stop("无界解")
+    }
+    ratio_cons<-constant[valid_indices]/enter[valid_indices]
+    exit_col<-valid_indices[which.min(ratio_cons)] 
+    exit<-basis[,exit_col,drop = FALSE] #选择出基变量
+    pivot<-coef_matrix[exit_col,enter_col] #确定主元
+    #更新基变量与系数   
+    not_b<-not_b[,!colnames(not_b)%in%colnames(enter),drop=FALSE]
+    not_b<-cbind(not_b,basis[,exit_col,drop=FALSE]) #更新非基变量
+    basis[,exit_col]<-enter
+    colnames(basis)[exit_col]<-colnames(enter) #更新基变量
+    #高斯消元
+    coef_matrix[exit_col,]<-coef_matrix[exit_col,]/pivot
+    constant[exit_col]<-constant[exit_col]/pivot #归一化主元所在行
+    cor_coef<-z[colnames(basis)] #更新基变量对应的系数
+    for(i in seq_len(nrow(coef_matrix))){
+        if(i != exit_col){
+            factor<-coef_matrix[i,enter_col] #获取了当前行中入基变量对应的系数，以保证常数项正常更新
+            coef_matrix[i,]<-coef_matrix[i,]- #因为vscode的原因句子太长有蓝色波浪线故拆分
+              factor*coef_matrix[exit_col,]
+            constant[i]<-constant[i]-
+              factor*constant[exit_col] #更新常数项（之前因为先更新系数矩阵导致常数项无法更新debug了半天）
+        }
+    } 
+}
+
+###特殊线性规划
+##工商管理问题
+#在人力分配问题上，我们会遇到与排班相关的问题，以以下题目为例，我们将实现他们:
+# 一家中型的百货商场对售货员的需求经过统计分析如表4-2所示。
+# 所需售货员人数表
+# 时间          | 星期一  | 星期二  | 星期三 | 星期四 | 星期五  | 星期六 | 星期日
+# 所需售货员人数 |   15   |   24   |   25   |   19   |   31   |   28   |   28
+#为了保证售货员充分休息，要求售货员每周工作五天，休息两天，并要求休息的两天是连续的。
+#问应该如何安排售货员的休息日期，既满足工作需要，又使配备的售货员的人数最少？
+#此时我们需要使用贪心算法
+
+
+
+
+
+
+
+##运输问题
